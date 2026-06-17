@@ -25,6 +25,9 @@ ansible-collections:
 provision: ansible-collections
 	$(ANSIBLE) playbook.yml $(VAULT_ARGS)
 
+monitoring: ansible-collections
+	$(ANSIBLE) monitoring.yml $(VAULT_ARGS)
+
 deploy: ansible-collections
 	$(ANSIBLE) deploy.yml $(VAULT_ARGS) -e app_image_tag=$(IMAGE_TAG)
 
@@ -32,4 +35,4 @@ rollback:
 	@test -n "$(ROLLBACK_TAG)" || (echo "Укажите ROLLBACK_TAG=<git-sha|stable-tag> для отката" && exit 1)
 	$(MAKE) deploy IMAGE_TAG=$(ROLLBACK_TAG)
 
-.PHONY: ansible-collections provision deploy rollback
+.PHONY: ansible-collections provision monitoring deploy rollback

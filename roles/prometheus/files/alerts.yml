@@ -1,0 +1,21 @@
+---
+groups:
+  - name: instance_health
+    rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Target {{ $labels.instance }} is down"
+          description: "Prometheus cannot scrape {{ $labels.job }} (instance {{ $labels.instance }})."
+
+      - alert: InstanceMissing
+        expr: absent(up)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No scrape data for {{ $labels.job }}"
+          description: "Metric up is absent for job {{ $labels.job }}."

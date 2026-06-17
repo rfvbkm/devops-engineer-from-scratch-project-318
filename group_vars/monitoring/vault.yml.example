@@ -1,0 +1,8 @@
+---
+# Скопируйте в vault.yml и зашифруйте (опционально для текущего scrape через management-порт):
+#   cp group_vars/monitoring/vault.yml.example group_vars/monitoring/vault.yml
+#   ansible-vault encrypt group_vars/monitoring/vault.yml
+#
+# Пароль basic auth — если scrape Actuator настроен через Nginx (scheme: https, basic_auth: true).
+# Должен совпадать с vault_nginx_management_basic_auth_password на сервере приложения.
+vault_prometheus_actuator_basic_auth_password: "CHANGE_ME"

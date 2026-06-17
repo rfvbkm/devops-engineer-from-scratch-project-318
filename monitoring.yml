@@ -1,6 +1,6 @@
 ---
-- name: Prepare server for Docker deployment
-  hosts: servers
+- name: Prepare monitoring server for Prometheus
+  hosts: monitoring
   become: true
   vars:
     docker_user: "{{ ansible_user | default('user') }}"
@@ -17,14 +17,10 @@
       - lsb-release
       - apt-transport-https
       - software-properties-common
-      - git
-      - htop
       - ufw
     allowed_ports:
       - { port: "22", proto: tcp, comment: "SSH" }
-      - { port: "80", proto: tcp, comment: "HTTP" }
-      - { port: "443", proto: tcp, comment: "HTTPS" }
-      - { port: "{{ node_exporter_port | default(9100) }}", proto: tcp, comment: "Node Exporter" }
+      - { port: "{{ prometheus_port | default(9090) }}", proto: tcp, comment: "Prometheus" }
 
   tasks:
     - name: Update apt cache
@@ -111,21 +107,9 @@
         comment: "{{ item.comment }}"
       loop: "{{ allowed_ports }}"
 
-    - name: Allow monitoring host to scrape management port
-      community.general.ufw:
-        rule: allow
-        port: "{{ app_management_port | default(9090) }}"
-        proto: tcp
-        from_ip: "{{ hostvars[groups['monitoring'][0]]['ansible_host'] }}"
-        comment: "Actuator scrape from Prometheus"
-      when:
-        - groups['monitoring'] | default([]) | length > 0
-        - hostvars[groups['monitoring'][0]]['ansible_host'] is defined
-
     - name: Enable UFW
       community.general.ufw:
         state: enabled
 
   roles:
-    - node_exporter
-    - nginx
+    - prometheus

@@ -1,0 +1,36 @@
+---
+prometheus_port: 9090
+
+# Хост приложения (группа servers) — для scrape Node Exporter и Actuator.
+prometheus_app_inventory_host: "{{ groups['servers'][0] }}"
+prometheus_app_host: "{{ hostvars[prometheus_app_inventory_host]['ansible_host'] }}"
+prometheus_app_domain: "{{ hostvars[prometheus_app_inventory_host]['nginx_server_name'] | default(prometheus_app_host) }}"
+prometheus_node_exporter_port: "{{ hostvars[prometheus_app_inventory_host]['node_exporter_port'] | default(9100) }}"
+prometheus_app_management_port: "{{ hostvars[prometheus_app_inventory_host]['app_management_port'] | default(9090) }}"
+
+# Список scrape jobs — добавление новых сервисов через vars, без правки шаблона.
+prometheus_scrape_jobs:
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - "localhost:{{ prometheus_port }}"
+        labels:
+          instance: monitoring
+
+  - job_name: node_exporter
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - "{{ prometheus_app_host }}:{{ prometheus_node_exporter_port }}"
+        labels:
+          instance: app
+          role: application
+
+  - job_name: spring_boot_actuator
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets:
+          - "{{ prometheus_app_host }}:{{ prometheus_app_management_port }}"
+        labels:
+          instance: app
+          app: bulletins

@@ -118,6 +118,7 @@ Ansible-плейбуки запускаются с **хост-машины** и 
 ```bash
 make ansible-collections   # community.general, community.docker
 make provision             # первичная настройка сервера (один раз)
+make monitoring            # развёртывание Prometheus на monitoring-ВМ
 make deploy                # деплой/обновление контейнера приложения
 ```
 
@@ -229,3 +230,77 @@ curl -sS -u metrics:'<password>' https://<app-host>/actuator/prometheus
 ```bash
 curl -sS http://<app-host>:9100/metrics
 ```
+
+## Prometheus
+
+Отдельная ВМ группы `monitoring` собирает метрики с сервера приложения. Развёртывание и повторный деплой — одной командой:
+
+```bash
+make monitoring
+```
+
+Плейбук `monitoring.yml` устанавливает Docker, настраивает UFW (только SSH и сервисы наблюдаемости) и запускает контейнер Prometheus в сети `monitoring` с отдельными volume'ами:
+
+| Volume на хосте | Назначение |
+|-----------------|------------|
+| `/opt/prometheus/config` | `prometheus.yml` (шаблон из Ansible vars) |
+| `/opt/prometheus/config/rules` | правила алертинга (`roles/prometheus/files/alerts.yml`) |
+| `/opt/prometheus/data` | TSDB (метрики) |
+
+Конфигурация и alert rules лежат в репозитории; чувствительные данные — в `group_vars/monitoring/vault.yml` (см. `vault.yml.example`).
+
+### Адрес Prometheus
+
+- **UI (графики):** http://176.53.174.159:9090/graph
+- **Таргеты:** http://176.53.174.159:9090/targets
+- **Health:** http://176.53.174.159:9090/-/healthy
+
+Сервер мониторинга: `176.53.174.159` (группа `monitoring`, хост `prometheus` в `inventory.ini`).
+
+### Таргеты scrape
+
+Список задаётся в `group_vars/monitoring/main.yml` (`prometheus_scrape_jobs`) и подставляется в шаблон `roles/prometheus/templates/prometheus.yml.j2`:
+
+| Job | Таргет | Источник vars |
+|-----|--------|---------------|
+| `prometheus` | `localhost:9090` | self-monitoring |
+| `node_exporter` | `<app-host>:9100` | `prometheus_app_host`, `prometheus_node_exporter_port` |
+| `spring_boot_actuator` | `<app-host>:9090/actuator/prometheus` | `prometheus_app_host`, `prometheus_app_management_port` |
+
+Порты management (`9090`) на сервере приложения открыты в UFW **только** для IP monitoring-ВМ (см. `playbook.yml`).
+
+Зарезервированы места для `nginx_exporter` и `loki` в `prometheus_scrape_jobs`.
+
+### Проверка `up == 1`
+
+После `make monitoring` и `make provision` на сервере приложения все таргеты должны быть в состоянии **UP**:
+
+1. Откройте http://176.53.174.159:9090/targets — в колонке **State** у каждого job должно быть `UP`.
+2. В PromQL (http://176.53.174.159:9090/graph) выполните запрос:
+
+```promql
+up
+```
+
+Ожидаемый результат — значение `1` для каждого таргета (`job="node_exporter"`, `job="spring_boot_actuator"`, `job="prometheus"`).
+
+```bash
+# Проверка через API
+curl -sS 'http://176.53.174.159:9090/api/v1/query?query=up' | jq '.data.result[] | {job: .metric.job, instance: .metric.instance, value: .value[1]}'
+```
+
+### ВМ мониторинга в Yandex Cloud
+
+1. Создайте ВМ Ubuntu в том же каталоге, что и сервер приложения (2 vCPU, 2 GB RAM достаточно).
+2. В **группах безопасности** / **firewall** разрешите входящий трафик только на порты **22** (SSH) и **9090** (Prometheus). Исходящий — для scrape таргетов на сервере приложения.
+3. Добавьте SSH-ключ пользователя `user` (как на сервере приложения).
+4. Укажите IP в `inventory.ini` в группе `[monitoring]`.
+5. Запустите `make monitoring`.
+
+### Требования для monitoring-ВМ
+
+- **SSH** на порту 22, пользователь с sudo.
+- **Python 3**, исходящий доступ в интернет (Docker, pull образа `prom/prometheus`).
+- Входящие порты: **22**, **9090** (UFW настраивается плейбуком).
+- Ansible-коллекция `community.docker` (устанавливается через `make ansible-collections`).
+

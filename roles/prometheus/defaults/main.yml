@@ -1,0 +1,25 @@
+---
+prometheus_image: prom/prometheus
+prometheus_image_tag: v2.55.1
+prometheus_container_name: prometheus
+
+prometheus_port: 9090
+prometheus_retention_time: 15d
+
+prometheus_base_dir: /opt/prometheus
+prometheus_config_dir: "{{ prometheus_base_dir }}/config"
+prometheus_data_dir: "{{ prometheus_base_dir }}/data"
+prometheus_rules_dir: "{{ prometheus_config_dir }}/rules"
+
+prometheus_docker_network: monitoring
+prometheus_docker_host: unix:///var/run/docker.sock
+
+prometheus_global_scrape_interval: 15s
+prometheus_global_evaluation_interval: 15s
+
+# Basic auth для scrape Actuator через Nginx (пароль — в vault).
+prometheus_actuator_basic_auth_user: metrics
+prometheus_actuator_basic_auth_password: "{{ vault_prometheus_actuator_basic_auth_password | default('') }}"
+
+# Таргеты задаются в group_vars/monitoring/main.yml.
+prometheus_scrape_jobs: []
