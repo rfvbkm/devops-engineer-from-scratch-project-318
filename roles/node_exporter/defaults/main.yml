@@ -1,0 +1,18 @@
+---
+node_exporter_version: "1.8.2"
+node_exporter_port: 9100
+node_exporter_listen_address: "0.0.0.0:{{ node_exporter_port }}"
+
+node_exporter_user: node_exporter
+node_exporter_group: node_exporter
+node_exporter_install_dir: /usr/local/bin
+node_exporter_textfile_dir: /var/lib/node_exporter/textfile_collector
+
+# Обязательные группы метрик: CPU load, память, диски, сеть, процессы, systemd-сервисы.
+node_exporter_enabled_collectors:
+  - systemd
+  - processes
+
+node_exporter_disabled_collectors: []
+
+node_exporter_extra_args: ""

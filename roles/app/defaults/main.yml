@@ -1,0 +1,36 @@
+---
+app_name: project-devops-deploy
+app_image: ghcr.io/rfvbkm/project-devops-deploy
+app_image_tag: latest
+app_container_name: project-devops-deploy
+
+app_port: 8080
+app_management_port: 9090
+app_spring_profile: prod
+
+app_base_dir: /opt/project-devops-deploy
+app_data_dir: "{{ app_base_dir }}/data"
+app_log_dir: "{{ app_base_dir }}/logs"
+app_images_dir: "{{ app_base_dir }}/images"
+
+app_dir_owner: root
+app_dir_group: root
+app_dir_mode: "0755"
+
+app_registry_url: ghcr.io
+app_registry_username: ""
+app_registry_password: ""
+
+app_docker_host: unix:///var/run/docker.sock
+app_network_mode: host
+
+app_java_opts: "-XX:MaxRAMPercentage=75 -XX:+UseContainerSupport"
+
+app_container_env: {}
+app_container_volumes:
+  - "{{ app_data_dir }}:/app/data"
+  - "{{ app_log_dir }}:/app/logs"
+  - "{{ app_images_dir }}:/tmp/bulletin-images"
+
+app_healthcheck_retries: 30
+app_healthcheck_delay: 5

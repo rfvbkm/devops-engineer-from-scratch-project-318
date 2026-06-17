@@ -1,0 +1,33 @@
+# JSON access/error log formats for management reverse proxy.
+map $status $nginx_is_error_status {
+    default 0;
+    ~^[45]  1;
+}
+
+log_format json_access escape=json '{'
+    '"time":"$time_iso8601",'
+    '"remote_addr":"$remote_addr",'
+    '"request_method":"$request_method",'
+    '"request_uri":"$request_uri",'
+    '"status":$status,'
+    '"body_bytes_sent":$body_bytes_sent,'
+    '"request_time":$request_time,'
+    '"upstream_addr":"$upstream_addr",'
+    '"upstream_status":"$upstream_status",'
+    '"upstream_response_time":"$upstream_response_time",'
+    '"http_user_agent":"$http_user_agent",'
+    '"http_referer":"$http_referer"'
+'}';
+
+log_format json_error escape=json '{'
+    '"time":"$time_iso8601",'
+    '"level":"error",'
+    '"remote_addr":"$remote_addr",'
+    '"request_method":"$request_method",'
+    '"request_uri":"$request_uri",'
+    '"status":$status,'
+    '"upstream_addr":"$upstream_addr",'
+    '"upstream_status":"$upstream_status",'
+    '"upstream_response_time":"$upstream_response_time",'
+    '"error_message":"upstream request failed"'
+'}';

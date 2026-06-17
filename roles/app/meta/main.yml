@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: app
+  author: project-devops-deploy
+  description: Deploy Spring Boot application as a Docker container
+  license: MIT
+  min_ansible_version: "2.17"
+dependencies: []

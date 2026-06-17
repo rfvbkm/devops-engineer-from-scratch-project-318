@@ -1,0 +1,1 @@
+proxy_cache_path {{ nginx_cache_path }} levels=1:2 keys_zone={{ nginx_cache_keys_zone }} max_size={{ nginx_cache_max_size }} inactive={{ nginx_cache_inactive }} use_temp_path=off;

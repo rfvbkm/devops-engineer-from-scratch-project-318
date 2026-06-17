@@ -1,0 +1,7 @@
+---
+- name: Deploy application container
+  hosts: servers
+  become: true
+  roles:
+    - app
+    - nginx

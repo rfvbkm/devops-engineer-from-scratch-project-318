@@ -1,0 +1,118 @@
+upstream {{ app_name | default('project-devops-deploy') }}_backend {
+    server {{ nginx_upstream_host }}:{{ nginx_upstream_port }};
+    keepalive 32;
+}
+
+{% if nginx_ssl_ready | default(false) %}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ nginx_server_name }};
+
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        root {{ certbot_webroot }};
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+{% endif %}
+
+server {
+{% if nginx_ssl_ready | default(false) %}
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+
+    ssl_certificate {{ nginx_ssl_certificate }};
+    ssl_certificate_key {{ nginx_ssl_certificate_key }};
+    include {{ nginx_ssl_params_path }};
+{% else %}
+    listen {{ nginx_listen_port }};
+    listen [::]:{{ nginx_listen_port }};
+{% endif %}
+    server_name {{ nginx_server_name }};
+
+    client_max_body_size {{ nginx_client_max_body_size }};
+
+    access_log /var/log/nginx/{{ app_name | default('project-devops-deploy') }}.access.log;
+    error_log /var/log/nginx/{{ app_name | default('project-devops-deploy') }}.error.log;
+
+{% if nginx_management_enabled | default(false) %}
+    # Healthcheck и Prometheus-метрики приложения (management-порт {{ nginx_management_upstream_port }}).
+    location ~ ^/actuator/(health|prometheus)(/.*)?$ {
+{% if nginx_management_basic_auth_enabled | default(false) and nginx_management_basic_auth_password | default('') | length > 0 %}
+        auth_basic "Management endpoints";
+        auth_basic_user_file {{ nginx_management_htpasswd_path }};
+{% endif %}
+        proxy_pass http://{{ nginx_management_upstream_host }}:{{ nginx_management_upstream_port }};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+
+        access_log {{ nginx_management_access_log }} json_access;
+        access_log {{ nginx_management_error_log }} json_error if=$nginx_is_error_status;
+        error_log {{ nginx_management_internal_error_log }} warn;
+    }
+{% endif %}
+
+{% if not (nginx_ssl_ready | default(false)) %}
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        root {{ certbot_webroot }};
+    }
+{% endif %}
+
+    # Загрузки: отдаём с диска (volume контейнера), при отсутствии — проксируем в приложение (S3).
+    location /api/files/raw {
+        if ($arg_key = "") {
+            return 404;
+        }
+        if ($arg_key ~ \.\.) {
+            return 403;
+        }
+
+        rewrite ^ /$arg_key break;
+        root {{ nginx_uploads_dir }};
+        try_files $uri @app_backend;
+
+        expires {{ nginx_uploads_expires }};
+        add_header Cache-Control "public";
+        access_log off;
+    }
+
+    # Статические ресурсы фронтенда — прокси с кешированием.
+    location ~* \.(?:js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|map|webp)$ {
+        proxy_pass http://{{ app_name | default('project-devops-deploy') }}_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        include /etc/nginx/proxy_params;
+
+        proxy_cache app_cache;
+        proxy_cache_valid 200 301 302 {{ nginx_static_cache_valid }};
+        proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+        proxy_cache_lock on;
+        add_header X-Cache-Status $upstream_cache_status always;
+
+        expires {{ nginx_static_cache_valid }};
+    }
+
+    location / {
+        proxy_pass http://{{ app_name | default('project-devops-deploy') }}_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        include /etc/nginx/proxy_params;
+    }
+
+    location @app_backend {
+        proxy_pass http://{{ app_name | default('project-devops-deploy') }}_backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        include /etc/nginx/proxy_params;
+    }
+}

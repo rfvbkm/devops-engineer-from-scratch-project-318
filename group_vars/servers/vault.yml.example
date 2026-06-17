@@ -1,0 +1,25 @@
+---
+# Скопируйте в vault.yml и зашифруйте:
+#   cp group_vars/servers/vault.yml.example group_vars/servers/vault.yml
+#   ansible-vault encrypt group_vars/servers/vault.yml
+#
+# Для редактирования:
+#   ansible-vault edit group_vars/servers/vault.yml
+
+vault_spring_datasource_url: "jdbc:postgresql://db.example.com:5432/bulletins"
+vault_spring_datasource_username: "postgres"
+vault_spring_datasource_password: "CHANGE_ME"
+
+vault_storage_s3_bucket: ""
+vault_storage_s3_region: ""
+vault_storage_s3_endpoint: ""
+vault_storage_s3_access_key: ""
+vault_storage_s3_secret_key: ""
+vault_storage_s3_cdn_url: ""
+
+# Токен GitHub (PAT) или другой пароль для pull из ghcr.io, если образ приватный.
+vault_docker_registry_username: ""
+vault_docker_registry_password: ""
+
+# Basic auth для /actuator/health и /actuator/prometheus через Nginx.
+vault_nginx_management_basic_auth_password: "CHANGE_ME"

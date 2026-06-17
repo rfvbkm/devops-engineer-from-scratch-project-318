@@ -1,0 +1,260 @@
+---
+- name: Require certbot contact email when TLS is enabled
+  ansible.builtin.assert:
+    that:
+      - certbot_email | length > 0
+    fail_msg: >-
+      Set certbot_email in group_vars/servers/main.yml (Let's Encrypt requires a contact address).
+  when: certbot_enabled
+
+- name: Install nginx
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - apache2-utils
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Deploy JSON log format for management endpoints
+  ansible.builtin.template:
+    src: json_log.conf.j2
+    dest: /etc/nginx/conf.d/json_log.conf
+    owner: root
+    group: root
+    mode: "0644"
+  when: nginx_management_enabled | default(false)
+  notify: Validate and reload nginx
+
+- name: Configure basic auth for management endpoints
+  community.general.htpasswd:
+    path: "{{ nginx_management_htpasswd_path }}"
+    name: "{{ nginx_management_basic_auth_user }}"
+    password: "{{ nginx_management_basic_auth_password }}"
+    owner: root
+    group: www-data
+    mode: "0640"
+  no_log: true
+  when:
+    - nginx_management_enabled | default(false)
+    - nginx_management_basic_auth_enabled | default(false)
+    - nginx_management_basic_auth_password | length > 0
+  notify: Validate and reload nginx
+
+- name: Install certbot
+  ansible.builtin.apt:
+    name: certbot
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: certbot_enabled
+
+- name: Ensure certbot webroot directory exists
+  ansible.builtin.file:
+    path: "{{ certbot_webroot }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+  when: certbot_enabled
+
+- name: Ensure ACME challenge directory exists
+  ansible.builtin.file:
+    path: "{{ certbot_webroot }}/.well-known/acme-challenge"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+  when: certbot_enabled
+
+- name: Ensure uploads directory exists for direct file serving
+  ansible.builtin.file:
+    path: "{{ nginx_uploads_dir }}"
+    state: directory
+    owner: "{{ app_dir_owner | default('root') }}"
+    group: "{{ app_dir_group | default('root') }}"
+    mode: "{{ app_dir_mode | default('0755') }}"
+
+- name: Ensure nginx cache directory exists
+  ansible.builtin.file:
+    path: "{{ nginx_cache_path }}"
+    state: directory
+    owner: www-data
+    group: www-data
+    mode: "0755"
+
+- name: Check TLS certificate presence
+  ansible.builtin.stat:
+    path: "{{ nginx_ssl_certificate }}"
+  register: nginx_ssl_certificate_stat
+  when: certbot_enabled
+
+- name: Remove legacy TLS config from conf.d
+  ansible.builtin.file:
+    path: /etc/nginx/conf.d/ssl.conf
+    state: absent
+  when: certbot_enabled
+
+- name: Deploy TLS parameters snippet
+  ansible.builtin.template:
+    src: ssl.conf.j2
+    dest: "{{ nginx_ssl_params_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: certbot_enabled
+
+- name: Deploy proxy cache configuration
+  ansible.builtin.template:
+    src: proxy_cache.conf.j2
+    dest: /etc/nginx/conf.d/proxy_cache.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Validate and reload nginx
+
+- name: Deploy HTTP-only site configuration for initial certificate issuance
+  ansible.builtin.template:
+    src: app.conf.j2
+    dest: "/etc/nginx/sites-available/{{ app_name | default('project-devops-deploy') }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    nginx_ssl_ready: false
+  notify: Validate and reload nginx
+  when:
+    - certbot_enabled
+    - not nginx_ssl_certificate_stat.stat.exists
+
+- name: Deploy application site configuration with TLS
+  ansible.builtin.template:
+    src: app.conf.j2
+    dest: "/etc/nginx/sites-available/{{ app_name | default('project-devops-deploy') }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    nginx_ssl_ready: true
+  notify: Validate and reload nginx
+  when:
+    - certbot_enabled
+    - nginx_ssl_certificate_stat.stat.exists
+
+- name: Deploy application site configuration without TLS
+  ansible.builtin.template:
+    src: app.conf.j2
+    dest: "/etc/nginx/sites-available/{{ app_name | default('project-devops-deploy') }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    nginx_ssl_ready: false
+  notify: Validate and reload nginx
+  when: not certbot_enabled
+
+- name: Enable application site
+  ansible.builtin.file:
+    src: "/etc/nginx/sites-available/{{ app_name | default('project-devops-deploy') }}.conf"
+    dest: "/etc/nginx/sites-enabled/{{ app_name | default('project-devops-deploy') }}.conf"
+    state: link
+  notify: Validate and reload nginx
+
+- name: Disable default nginx site
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Validate and reload nginx
+
+- name: Flush handlers before certificate issuance
+  ansible.builtin.meta: flush_handlers
+  when:
+    - certbot_enabled
+    - not nginx_ssl_certificate_stat.stat.exists
+
+- name: Validate nginx configuration before certificate issuance
+  ansible.builtin.command: nginx -t
+  changed_when: false
+  when:
+    - certbot_enabled
+    - not nginx_ssl_certificate_stat.stat.exists
+
+- name: Reload nginx before certificate issuance
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+  when:
+    - certbot_enabled
+    - not nginx_ssl_certificate_stat.stat.exists
+
+- name: Build certbot domain arguments
+  ansible.builtin.set_fact:
+    certbot_domain_args: "{{ certbot_domain_args | default([]) + ['-d', item] }}"
+  loop: "{{ certbot_domains }}"
+  when:
+    - certbot_enabled
+    - not nginx_ssl_certificate_stat.stat.exists
+
+- name: Obtain Let's Encrypt certificate
+  ansible.builtin.command:
+    argv: >-
+      {{
+        [
+          'certbot', 'certonly', '--webroot', '-w', certbot_webroot,
+          '--email', certbot_email, '--agree-tos', '--non-interactive',
+          '--preferred-challenges', 'http-01'
+        ] + certbot_domain_args
+      }}
+    creates: "{{ nginx_ssl_certificate }}"
+  register: certbot_obtain
+  when:
+    - certbot_enabled
+    - not nginx_ssl_certificate_stat.stat.exists
+
+- name: Deploy application site configuration with TLS after certificate issuance
+  ansible.builtin.template:
+    src: app.conf.j2
+    dest: "/etc/nginx/sites-available/{{ app_name | default('project-devops-deploy') }}.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  vars:
+    nginx_ssl_ready: true
+  notify: Validate and reload nginx
+  when:
+    - certbot_enabled
+    - certbot_obtain is changed
+
+- name: Ensure certbot renewal hook directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/letsencrypt/renewal-hooks
+    - /etc/letsencrypt/renewal-hooks/deploy
+  when: certbot_enabled
+
+- name: Deploy certbot deploy hook to reload nginx after renewal
+  ansible.builtin.template:
+    src: certbot-deploy-hook.sh.j2
+    dest: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+    owner: root
+    group: root
+    mode: "0755"
+  when: certbot_enabled
+
+- name: Ensure certbot renewal timer is enabled
+  ansible.builtin.systemd:
+    name: certbot.timer
+    enabled: true
+    state: started
+  when: certbot_enabled
+
+- name: Ensure nginx is enabled and running
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true

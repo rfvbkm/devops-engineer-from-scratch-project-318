@@ -1,0 +1,41 @@
+---
+nginx_server_name: hexlet.mooo.com
+nginx_listen_port: 80
+nginx_listen_port_ssl: 443
+
+nginx_upstream_host: 127.0.0.1
+nginx_upstream_port: "{{ app_port | default(8080) }}"
+
+nginx_uploads_dir: "{{ app_images_dir | default('/opt/project-devops-deploy/images') }}"
+
+nginx_cache_path: /var/cache/nginx/app
+nginx_cache_keys_zone: app_cache:10m
+nginx_cache_max_size: 100m
+nginx_cache_inactive: 60m
+nginx_static_cache_valid: 1d
+nginx_uploads_expires: 7d
+
+nginx_client_max_body_size: 20m
+
+nginx_ssl_certificate: "/etc/letsencrypt/live/{{ nginx_server_name }}/fullchain.pem"
+nginx_ssl_certificate_key: "/etc/letsencrypt/live/{{ nginx_server_name }}/privkey.pem"
+nginx_ssl_params_path: /etc/nginx/snippets/ssl-params.conf
+
+certbot_enabled: true
+certbot_email: ""
+certbot_webroot: /var/www/certbot
+certbot_domains:
+  - "{{ nginx_server_name }}"
+
+# Management reverse proxy (Spring Boot Actuator на app_management_port).
+nginx_management_enabled: true
+nginx_management_upstream_host: 127.0.0.1
+nginx_management_upstream_port: "{{ app_management_port | default(9090) }}"
+nginx_management_htpasswd_path: /etc/nginx/management.htpasswd
+nginx_management_basic_auth_enabled: true
+nginx_management_basic_auth_user: metrics
+nginx_management_basic_auth_password: ""
+
+nginx_management_access_log: /var/log/nginx/management.access.json
+nginx_management_error_log: /var/log/nginx/management.error.json
+nginx_management_internal_error_log: /var/log/nginx/management.internal.error.log
